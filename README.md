@@ -12,8 +12,8 @@ A script to show tf and mesh from mujoco models, similar to robot_state_publishe
 
 
 ```bash
-python3 other/xml_robot_state_publisher_ros2.py \
-  --xml robot_model/go2/scene_flat.xml \
+python3 tf_mesh_publisher_ros2.py \
+  --xml sim2real-robot-identification/robot_model/go2/scene_flat.xml \
   --world-frame world \
   --joint-states-topic /joint_states \
   --publish-rate 100
@@ -22,8 +22,8 @@ python3 other/xml_robot_state_publisher_ros2.py \
 If your ROS graph uses simulation clock, add:
 
 ```bash
-python3 other/xml_robot_state_publisher_ros2.py \
-  --xml robot_model/go2/scene_flat.xml \
+python3 tf_mesh_publisher_ros2.py \
+  --xml sim2real-robot-identification/robot_model/go2/scene_flat.xml \
   --use-sim-time
 ```
 
@@ -37,7 +37,7 @@ It also publishes mesh visualization (XML-only, no URDF needed) as
 Example with manipulator:
 
 ```bash
-python3 other/xml_robot_state_publisher_ros2.py --xml robot_model/z1/scene_flat.xml
+python3 tf_mesh_publisher_ros2.py --xml sim2real-robot-identification/robot_model/z1/scene_flat.xml
 ```
 
 ### RViz notes
@@ -54,7 +54,7 @@ ros2 topic echo /tf_static --once
 You can also open a ready-to-use RViz config from this repo:
 
 ```bash
-rviz2 -d other/xml_tf_frames.rviz
+rviz2 -d xml_tf_frames.rviz
 ```
 
 The RViz config already includes:
