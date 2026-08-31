@@ -1,9 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/home/gturrisi-iit.local/other_ws_home/mujoco-tf-mesh-publisher-ros2/ros2_ws/build/dls2_interface/cmake_install.cmake",
-		"/home/gturrisi-iit.local/other_ws_home/mujoco-tf-mesh-publisher-ros2/ros2_ws/build/dls2_interface/dls2_interface__py/cmake_install.cmake",
-		"/home/gturrisi-iit.local/other_ws_home/mujoco-tf-mesh-publisher-ros2/ros2_ws/build/dls2_interface/dls2_interface__rs/cmake_install.cmake"
-	],
-	"Parallel" : false
-}

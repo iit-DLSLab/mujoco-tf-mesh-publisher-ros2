@@ -186,6 +186,34 @@ def _resolve_includes(xml_path: Path, visited: set[Path]) -> List[Tuple[ET.Eleme
     return roots
 
 
+def _parse_class_defaults(defaults_root: ET.Element) -> Dict[Optional[str], Dict[str, Dict[str, str]]]:
+    """Resolve MuJoCo <default class="..."> inheritance into per-class attribute maps.
+
+    A class's attributes are its ancestor chain's attributes with its own
+    attributes overlaid (MuJoCo's inheritance rule), keyed by child tag (e.g.
+    "joint", "geom"). The class-less root default is stored under key None.
+    """
+    resolved: Dict[Optional[str], Dict[str, Dict[str, str]]] = {}
+
+    def merge(parent_attrs: Dict[str, Dict[str, str]], elem: ET.Element) -> Dict[str, Dict[str, str]]:
+        merged = {tag: dict(attrs) for tag, attrs in parent_attrs.items()}
+        for child in elem:
+            if child.tag == "default":
+                continue
+            merged.setdefault(child.tag, {})
+            merged[child.tag].update(child.attrib)
+        return merged
+
+    def walk(elem: ET.Element, parent_attrs: Dict[str, Dict[str, str]], class_name: Optional[str]) -> None:
+        own_attrs = merge(parent_attrs, elem)
+        resolved[class_name] = own_attrs
+        for child in elem.findall("default"):
+            walk(child, own_attrs, child.get("class"))
+
+    walk(defaults_root, {}, None)
+    return resolved
+
+
 def _collect_mesh_assets(roots_with_paths: List[Tuple[ET.Element, Path]]) -> Dict[str, MeshAssetSpec]:
     assets: Dict[str, MeshAssetSpec] = {}
     for root, xml_path in roots_with_paths:
@@ -212,6 +240,16 @@ def _collect_transform_specs(
     roots = _resolve_includes(root_xml, visited=set())
     mesh_assets = _collect_mesh_assets(roots)
 
+    # MuJoCo lets <joint>/<geom> inherit attributes (e.g. "axis") from a
+    # <default class="..."> block instead of setting them inline; resolve
+    # that inheritance up front so per-element lookups below can fall back
+    # to it when the attribute isn't set directly on the element.
+    class_defaults: Dict[Optional[str], Dict[str, Dict[str, str]]] = {}
+    for root, _ in roots:
+        default_elem = root.find("default")
+        if default_elem is not None:
+            class_defaults.update(_parse_class_defaults(default_elem))
+
     # If angle is not specified in compiler, MuJoCo default is degrees.
     angle_in_radians = False
     for root, _ in roots:
@@ -231,9 +269,14 @@ def _collect_transform_specs(
         used_names[base] += 1
         return f"{base}_{used_names[base]}"
 
-    def walk_body(parent_frame: str, body_elem: ET.Element) -> None:
+    def walk_body(parent_frame: str, body_elem: ET.Element, childclass: Optional[str] = None) -> None:
         body_name = body_elem.get("name", "unnamed_body")
         child_frame = unique_frame(body_name)
+
+        # A body's childclass becomes the default class for its own and its
+        # descendants' joints/geoms, unless overridden by a nested body's own
+        # childclass or by an explicit class="..." on the element itself.
+        childclass = body_elem.get("childclass", childclass)
 
         body_pos = _parse_vec3(body_elem.get("pos"), (0.0, 0.0, 0.0))
         body_quat = _parse_body_quat(body_elem, angle_in_radians)
@@ -248,8 +291,11 @@ def _collect_transform_specs(
             joint = joint_elems[0]
             joint_name = joint.get("name")
             joint_type = joint.get("type", "hinge")
-            joint_axis = _parse_vec3(joint.get("axis"), (0.0, 0.0, 1.0))
-            joint_pos = _parse_vec3(joint.get("pos"), (0.0, 0.0, 0.0))
+
+            effective_class = joint.get("class", childclass)
+            class_joint_attrs = class_defaults.get(effective_class, {}).get("joint", {})
+            joint_axis = _parse_vec3(joint.get("axis", class_joint_attrs.get("axis")), (0.0, 0.0, 1.0))
+            joint_pos = _parse_vec3(joint.get("pos", class_joint_attrs.get("pos")), (0.0, 0.0, 0.0))
 
             if joint_type not in ("hinge", "slide"):
                 joint_type = "fixed"
@@ -310,7 +356,7 @@ def _collect_transform_specs(
             )
 
         for child_body in body_elem.findall("body"):
-            walk_body(child_frame, child_body)
+            walk_body(child_frame, child_body, childclass)
 
     for root, _ in roots:
         worldbody = root.find("worldbody")
@@ -414,7 +460,6 @@ class XmlRobotStatePublisher(Node):
         for i, name in enumerate(msg.joints_name):
             if i < len(msg.joints_position):
                 self._joint_positions[name] = msg.joints_position[i]
-                print("joint_positions updated:", name, msg.joints_position[i])  # debug print
 
     def _build_transform(self, spec: TransformSpec, stamp) -> TransformStamped:
         q_total = spec.body_quat

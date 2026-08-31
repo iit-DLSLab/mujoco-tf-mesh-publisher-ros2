@@ -1,6 +1,0 @@
-{
-  "package_name": "dls2_interface",
-  "non_idl_tuples": [
-    "/home/gturrisi-iit.local/other_ws_home/mujoco-tf-mesh-publisher-ros2/ros2_ws/src/dls2_interface:msg/BlindState.msg"
-  ]
-}
