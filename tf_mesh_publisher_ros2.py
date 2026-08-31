@@ -59,13 +59,8 @@ from sensor_msgs.msg import JointState
 from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster
 from visualization_msgs.msg import Marker, MarkerArray
 
-# now i try to import BlindState (dls2_interface), which is only needed when
-# --blind-state-topic is used; keep it optional so joint-states-only setups
-# don't need the dls2_interface package built.
-try:
-    from dls2_interface.msg import BlindState
-except ImportError:  # pragma: no cover - optional dependency
-    BlindState = None
+
+from dls2_interface.msg import BlindState
 
 
 Vec3 = Tuple[float, float, float]
@@ -423,11 +418,6 @@ class XmlRobotStatePublisher(Node):
         # since the node has nothing to drive TF with otherwise.
         if not joint_states_topics and not blind_state_topics:
             raise ValueError("At least one of joint_states_topics or blind_state_topics must be provided")
-        if blind_state_topics and BlindState is None:
-            raise ImportError(
-                "--blind-state-topic was given but dls2_interface is not available; "
-                "build/source the dls2_interface package to use BlindState topics"
-            )
 
         self._xml_path = xml_path
         self._joint_positions: Dict[str, float] = {}
