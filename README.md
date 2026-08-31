@@ -19,17 +19,24 @@ python3 tf_mesh_publisher_ros2.py \
   --publish-rate 100
 ```
 
-If your ROS graph uses simulation clock, add:
+The script resolves `<include file="..."/>` and supports `hinge` and `slide`
+joints from the XMLs in this repository. Missing joints are published at zero
+position.
+
+You must specify `--joint-states-topic`, `--blind-state-topic`, or both. Each
+flag accepts one or more topics, which get merged into the same joint set —
+useful when e.g. a quadruped HAL and an arm HAL publish separate topics for
+the same XML:
 
 ```bash
 python3 tf_mesh_publisher_ros2.py \
   --xml sim2real-robot-identification/robot_model/go2/scene_flat.xml \
-  --use-sim-time
+  --joint-states-topic /arm/joint_states \
+  --blind-state-topic /quadruped/blind_state
 ```
 
-The script resolves `<include file="..."/>` and supports `hinge` and `slide`
-joints from the XMLs in this repository. By default, missing joints in
-`/joint_states` are published at zero position.
+`--blind-state-topic` subscribes to `dls2_interface/msg/BlindState` (requires
+the `dls2_interface` package built in `ros2_ws/`).
 
 It also publishes mesh visualization (XML-only, no URDF needed) as
 `visualization_msgs/MarkerArray` on `/xml_robot_meshes`.

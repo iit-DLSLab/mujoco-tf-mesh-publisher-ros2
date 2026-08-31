@@ -17,11 +17,18 @@ import xml.etree.ElementTree as ET
 import rclpy
 from geometry_msgs.msg import TransformStamped
 from rclpy.node import Node
-from rclpy.parameter import Parameter
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState
 from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster
 from visualization_msgs.msg import Marker, MarkerArray
+
+# now i try to import BlindState (dls2_interface), which is only needed when
+# --blind-state-topic is used; keep it optional so joint-states-only setups
+# don't need the dls2_interface package built.
+try:
+    from dls2_interface.msg import BlindState
+except ImportError:  # pragma: no cover - optional dependency
+    BlindState = None
 
 
 Vec3 = Tuple[float, float, float]
@@ -321,16 +328,23 @@ class XmlRobotStatePublisher(Node):
         xml_path: Path,
         world_frame: str,
         frame_prefix: str,
-        joint_states_topic: str,
+        joint_states_topics: List[str],
+        blind_state_topics: List[str],
         publish_rate: float,
-        use_sim_time: bool,
         mesh_topic: str,
         mesh_publish_rate: float,
     ) -> None:
         super().__init__("xml_robot_state_publisher")
 
-        # Keep RViz and TF timestamps consistent with simulation time when requested.
-        self.set_parameters([Parameter("use_sim_time", value=use_sim_time)])
+        # now i make sure at least one of the two joint-position sources was given,
+        # since the node has nothing to drive TF with otherwise.
+        if not joint_states_topics and not blind_state_topics:
+            raise ValueError("At least one of joint_states_topics or blind_state_topics must be provided")
+        if blind_state_topics and BlindState is None:
+            raise ImportError(
+                "--blind-state-topic was given but dls2_interface is not available; "
+                "build/source the dls2_interface package to use BlindState topics"
+            )
 
         self._xml_path = xml_path
         self._joint_positions: Dict[str, float] = {}
@@ -353,12 +367,22 @@ class XmlRobotStatePublisher(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
         self._mesh_pub = self.create_publisher(MarkerArray, mesh_topic, marker_qos)
-        self._joint_states_sub = self.create_subscription(
-            JointState,
-            joint_states_topic,
-            self._joint_state_callback,
-            10,
-        )
+
+        # now i subscribe to every JointState topic given (e.g. one HAL publishing
+        # the quadruped joints and another publishing the arm joints); each
+        # callback merges its names/positions into the same shared dict so the
+        # full XML can be driven from several independent publishers at once.
+        self._joint_states_subs = [
+            self.create_subscription(JointState, topic, self._joint_state_callback, 10)
+            for topic in joint_states_topics
+        ]
+
+        # now i do the same for BlindState topics (dls2_interface), which carry
+        # joints_name/joints_position instead of JointState's name/position.
+        self._blind_state_subs = [
+            self.create_subscription(BlindState, topic, self._blind_state_callback, 10)
+            for topic in blind_state_topics
+        ]
 
         period = 1.0 / max(publish_rate, 1e-3)
         self._timer = self.create_timer(period, self._publish_tf)
@@ -367,8 +391,10 @@ class XmlRobotStatePublisher(Node):
         self.get_logger().info(f"Loaded XML model: {xml_path}")
         self.get_logger().info(f"Parsed transforms: total={len(self._specs)} dynamic={len(self._dynamic_specs)} static={len(self._static_specs)}")
         self.get_logger().info(f"Parsed visual meshes: {len(self._mesh_specs)}")
-        self.get_logger().info(f"Subscribing to JointState topic: {joint_states_topic}")
-        self.get_logger().info(f"use_sim_time={use_sim_time}")
+        if joint_states_topics:
+            self.get_logger().info(f"Subscribing to JointState topics: {joint_states_topics}")
+        if blind_state_topics:
+            self.get_logger().info(f"Subscribing to BlindState topics: {blind_state_topics}")
         self.get_logger().info(f"Mesh topic: {mesh_topic}")
 
         if not self._specs:
@@ -381,6 +407,14 @@ class XmlRobotStatePublisher(Node):
         for i, name in enumerate(msg.name):
             if i < len(msg.position):
                 self._joint_positions[name] = msg.position[i]
+
+    def _blind_state_callback(self, msg: "BlindState") -> None:
+        # now i merge this BlindState's joints into the same dict used by
+        # JointState, keyed by joint name so multiple publishers can coexist.
+        for i, name in enumerate(msg.joints_name):
+            if i < len(msg.joints_position):
+                self._joint_positions[name] = msg.joints_position[i]
+                print("joint_positions updated:", name, msg.joints_position[i])  # debug print
 
     def _build_transform(self, spec: TransformSpec, stamp) -> TransformStamped:
         q_total = spec.body_quat
@@ -497,8 +531,19 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--joint-states-topic",
-        default="/joint_states",
-        help="JointState topic used for joint positions",
+        nargs="+",
+        default=None,
+        metavar="TOPIC",
+        help="One or more sensor_msgs/JointState topics used for joint positions "
+        "(multiple topics are merged). Required if --blind-state-topic is not given.",
+    )
+    parser.add_argument(
+        "--blind-state-topic",
+        nargs="+",
+        default=None,
+        metavar="TOPIC",
+        help="One or more dls2_interface/msg/BlindState topics used for joint positions "
+        "(multiple topics are merged). Required if --joint-states-topic is not given.",
     )
     parser.add_argument(
         "--publish-rate",
@@ -507,22 +552,24 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="TF publish rate in Hz",
     )
     parser.add_argument(
-        "--use-sim-time",
-        action="store_true",
-        help="Use /clock time for TF timestamps",
-    )
-    parser.add_argument(
         "--mesh-topic",
         default="/xml_robot_meshes",
         help="MarkerArray topic used to publish mesh visualization",
     )
     parser.add_argument(
         "--mesh-publish-rate",
-        default=1.0,
+        default=5.0,
         type=float,
         help="Mesh MarkerArray publish rate in Hz",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+
+    # now i enforce that at least one joint-position source was requested,
+    # since --joint-states-topic no longer defaults to /joint_states.
+    if not args.joint_states_topic and not args.blind_state_topic:
+        parser.error("either --joint-states-topic or --blind-state-topic must be specified")
+
+    return args
 
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
@@ -536,9 +583,9 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         xml_path=xml_path,
         world_frame=args.world_frame,
         frame_prefix=args.frame_prefix,
-        joint_states_topic=args.joint_states_topic,
+        joint_states_topics=args.joint_states_topic or [],
+        blind_state_topics=args.blind_state_topic or [],
         publish_rate=args.publish_rate,
-        use_sim_time=args.use_sim_time,
         mesh_topic=args.mesh_topic,
         mesh_publish_rate=args.mesh_publish_rate,
     )

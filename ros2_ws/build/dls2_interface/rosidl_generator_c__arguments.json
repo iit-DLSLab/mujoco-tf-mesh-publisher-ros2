@@ -1,0 +1,24 @@
+{
+  "package_name": "dls2_interface",
+  "output_dir": "/home/gturrisi-iit.local/other_ws_home/mujoco-tf-mesh-publisher-ros2/ros2_ws/build/dls2_interface/rosidl_generator_c/dls2_interface",
+  "template_dir": "/home/gturrisi-iit.local/miniforge3/envs/basic_locomotion_isaaclab_env/share/rosidl_generator_c/cmake/../resource",
+  "idl_tuples": [
+    "/home/gturrisi-iit.local/other_ws_home/mujoco-tf-mesh-publisher-ros2/ros2_ws/build/dls2_interface/rosidl_adapter/dls2_interface:msg/BlindState.idl"
+  ],
+  "target_dependencies": [
+    "/home/gturrisi-iit.local/miniforge3/envs/basic_locomotion_isaaclab_env/share/rosidl_generator_c/cmake/../../../lib/rosidl_generator_c/rosidl_generator_c",
+    "/home/gturrisi-iit.local/miniforge3/envs/basic_locomotion_isaaclab_env/share/rosidl_generator_c/cmake/../../../lib/python3.12/site-packages/rosidl_generator_c/__init__.py",
+    "/home/gturrisi-iit.local/miniforge3/envs/basic_locomotion_isaaclab_env/share/rosidl_generator_c/cmake/../resource/action__type_support.h.em",
+    "/home/gturrisi-iit.local/miniforge3/envs/basic_locomotion_isaaclab_env/share/rosidl_generator_c/cmake/../resource/idl.h.em",
+    "/home/gturrisi-iit.local/miniforge3/envs/basic_locomotion_isaaclab_env/share/rosidl_generator_c/cmake/../resource/idl__functions.c.em",
+    "/home/gturrisi-iit.local/miniforge3/envs/basic_locomotion_isaaclab_env/share/rosidl_generator_c/cmake/../resource/idl__functions.h.em",
+    "/home/gturrisi-iit.local/miniforge3/envs/basic_locomotion_isaaclab_env/share/rosidl_generator_c/cmake/../resource/idl__struct.h.em",
+    "/home/gturrisi-iit.local/miniforge3/envs/basic_locomotion_isaaclab_env/share/rosidl_generator_c/cmake/../resource/idl__type_support.h.em",
+    "/home/gturrisi-iit.local/miniforge3/envs/basic_locomotion_isaaclab_env/share/rosidl_generator_c/cmake/../resource/msg__functions.c.em",
+    "/home/gturrisi-iit.local/miniforge3/envs/basic_locomotion_isaaclab_env/share/rosidl_generator_c/cmake/../resource/msg__functions.h.em",
+    "/home/gturrisi-iit.local/miniforge3/envs/basic_locomotion_isaaclab_env/share/rosidl_generator_c/cmake/../resource/msg__struct.h.em",
+    "/home/gturrisi-iit.local/miniforge3/envs/basic_locomotion_isaaclab_env/share/rosidl_generator_c/cmake/../resource/msg__type_support.h.em",
+    "/home/gturrisi-iit.local/miniforge3/envs/basic_locomotion_isaaclab_env/share/rosidl_generator_c/cmake/../resource/srv__type_support.h.em",
+    "/home/gturrisi-iit.local/other_ws_home/mujoco-tf-mesh-publisher-ros2/ros2_ws/build/dls2_interface/rosidl_adapter/dls2_interface/msg/BlindState.idl"
+  ]
+}
