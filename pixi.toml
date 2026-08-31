@@ -1,5 +1,5 @@
 [workspace]
-name = "mujoco_tf_mesh_publisher_env"
+name = "mujoco_tf_mesh_publisher_ros2_env"
 platforms = ["linux-64"]
 channels = ["conda-forge"]
 

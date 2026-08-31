@@ -63,11 +63,7 @@ the `dls2_interface` package built in `ros2_ws/`).
 It also publishes mesh visualization (XML-only, no URDF needed) as
 `visualization_msgs/MarkerArray` on `/xml_robot_meshes`.
 
-Example with manipulator:
 
-```bash
-python3 tf_mesh_publisher_ros2.py --xml /path/to/xml
-```
 
 ### RViz notes
 
