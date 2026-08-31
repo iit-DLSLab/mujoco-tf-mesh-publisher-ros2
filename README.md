@@ -8,6 +8,28 @@
 A script to show tf and mesh from mujoco models, similar to robot_state_publisher.
 
 
+## Installation
+
+This repo uses [pixi](https://pixi.sh) to provide a self-contained ROS2 environment (via [RoboStack](https://robostack.github.io/)), so no system-wide ROS2 install is required.
+
+1. Install pixi (see the [official instructions](https://pixi.sh/latest/#installation)).
+
+2. Clone this repo together with its submodule:
+
+
+
+3. Install the environment. Two ROS2 distros are available as pixi environments, `humble` and `lyrical` — pick one:
+
+```bash
+pixi shell -e humble
+# or
+pixi shell -e lyrical
+```
+
+
+You can now run the commands below from inside the pixi shell.
+
+
 ## ROS2 XML State Publisher (MuJoCo XML)
 
 
@@ -44,7 +66,7 @@ It also publishes mesh visualization (XML-only, no URDF needed) as
 Example with manipulator:
 
 ```bash
-python3 tf_mesh_publisher_ros2.py --xml sim2real-robot-identification/robot_model/z1/scene_flat.xml
+python3 tf_mesh_publisher_ros2.py --xml /path/to/xml
 ```
 
 ### RViz notes

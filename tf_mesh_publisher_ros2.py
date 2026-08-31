@@ -7,6 +7,43 @@ sensor_msgs/JointState, and publishes TF transforms similarly to robot_state_pub
 
 from __future__ import annotations
 
+import os
+
+# Fail-safe: se non è stato scelto esplicitamente altro,
+# ROS 2 comunica solamente sulla macchina locale.
+os.environ.setdefault("ROS_LOCALHOST_ONLY", "1")
+
+print(
+    "ROS 2 network mode:",
+    "LOCALHOST" if os.environ["ROS_LOCALHOST_ONLY"] == "1" else "NETWORK",
+)
+
+import sys
+import shlex
+import subprocess
+from pathlib import Path
+
+dir_path = Path(__file__).resolve().parent
+sys.path.append(str(dir_path / ".."))
+
+ros_ws = dir_path / "ros2_ws"
+setup_bash = ros_ws / "install" / "setup.bash"
+
+if not setup_bash.exists():
+    print("Building the msgs first...")
+    subprocess.run(["colcon", "build"], cwd=ros_ws, check=True)
+
+if os.environ.get("BASIC_LOCOMOTION_ROS2_SOURCED") != "1":
+    print("Sourcing ROS2 workspace and restarting script...")
+    cmd = (
+        f"source {shlex.quote(str(setup_bash))} && "
+        "export BASIC_LOCOMOTION_ROS2_SOURCED=1 && "
+        f"exec {shlex.quote(sys.executable)} "
+        + " ".join(shlex.quote(arg) for arg in [str(Path(__file__).resolve()), *sys.argv[1:]])
+    )
+    os.execv("/bin/bash", ["bash", "-c", cmd])
+
+
 import argparse
 import math
 from dataclasses import dataclass
