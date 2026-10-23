@@ -60,6 +60,23 @@ python3 tf_mesh_publisher_ros2.py \
 `--blind-state-topic` subscribes to `dls2_interface/msg/BlindState` (requires
 the `dls2_interface` package built in `ros2_ws/`).
 
+As robot_state_publisher does, the TF is stamped with the `JointState` header
+stamp (unstamped messages and `BlindState`, whose `DlsHeader` is not a ROS
+header, get the arrival time). Named `<site>` elements (e.g. `imu`, a lidar) are published as
+fixed frames on their body.
+
+When the robot is part of a larger TF tree:
+
+- `--root-frame base_link` names the top-level body frame `base_link` instead
+  of its body name.
+- `--no-world-transform` does not publish `world -> <top-level body>`, e.g.
+  when a state estimator already publishes it.
+- ROS arguments go after `--ros-args`, e.g. `--ros-args -p use_sim_time:=true`
+  to replay a bag with `ros2 bag play --clock`.
+- If `ROS_LOCALHOST_ONLY` is unset, the script sets it to `1`: set it to the
+  value the other nodes use (e.g. `ROS_LOCALHOST_ONLY=0`), or they will not see
+  each other.
+
 It also publishes mesh visualization (XML-only, no URDF needed) as
 `visualization_msgs/MarkerArray` on `/xml_robot_meshes`.
 

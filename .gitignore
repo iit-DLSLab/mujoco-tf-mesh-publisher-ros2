@@ -36,6 +36,9 @@ _build
 .lastformat
 
 # ROS2
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
 deploy/ros2_ws/build/
 deploy/ros2_ws/install/
 deploy/ros2_ws/log/

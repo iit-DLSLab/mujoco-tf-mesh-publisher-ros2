@@ -52,9 +52,11 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import xml.etree.ElementTree as ET
 
 import rclpy
+from builtin_interfaces.msg import Time as TimeMsg
 from geometry_msgs.msg import TransformStamped
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.utilities import remove_ros_args
 from sensor_msgs.msg import JointState
 from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster
 from visualization_msgs.msg import Marker, MarkerArray
@@ -268,6 +270,8 @@ def _collect_transform_specs(
     root_xml: Path,
     world_frame: str,
     frame_prefix: str,
+    root_frame: Optional[str] = None,
+    publish_world_transform: bool = True,
 ) -> Tuple[List[TransformSpec], List[MeshMarkerSpec]]:
     roots = _resolve_includes(root_xml, visited=set())
     mesh_assets = _collect_mesh_assets(roots)
@@ -291,6 +295,7 @@ def _collect_transform_specs(
 
     specs: List[TransformSpec] = []
     mesh_specs: List[MeshMarkerSpec] = []
+    sites: List[Tuple[str, ET.Element]] = []  # (body frame, site)
     used_names: Dict[str, int] = {}
 
     def unique_frame(name: str) -> str:
@@ -301,8 +306,15 @@ def _collect_transform_specs(
         used_names[base] += 1
         return f"{base}_{used_names[base]}"
 
-    def walk_body(parent_frame: str, body_elem: ET.Element, childclass: Optional[str] = None) -> None:
-        body_name = body_elem.get("name", "unnamed_body")
+    # parent_frame=None skips the body's own transform (but not its subtree);
+    # frame_name overrides the body name as frame name.
+    def walk_body(
+        parent_frame: Optional[str],
+        body_elem: ET.Element,
+        childclass: Optional[str] = None,
+        frame_name: Optional[str] = None,
+    ) -> None:
+        body_name = frame_name or body_elem.get("name", "unnamed_body")
         child_frame = unique_frame(body_name)
 
         # A body's childclass becomes the default class for its own and its
@@ -333,18 +345,21 @@ def _collect_transform_specs(
                 joint_type = "fixed"
                 joint_name = None
 
-        specs.append(
-            TransformSpec(
-                parent_frame=parent_frame,
-                child_frame=child_frame,
-                body_pos=body_pos,
-                body_quat=body_quat,
-                joint_name=joint_name,
-                joint_type=joint_type,
-                joint_axis=joint_axis,
-                joint_pos=joint_pos,
+        if parent_frame is not None:
+            specs.append(
+                TransformSpec(
+                    parent_frame=parent_frame,
+                    child_frame=child_frame,
+                    body_pos=body_pos,
+                    body_quat=body_quat,
+                    joint_name=joint_name,
+                    joint_type=joint_type,
+                    joint_axis=joint_axis,
+                    joint_pos=joint_pos,
+                )
             )
-        )
+
+        sites.extend((child_frame, site) for site in body_elem.findall("site"))
 
         for geom in body_elem.findall("geom"):
             mesh_name = geom.get("mesh")
@@ -390,12 +405,36 @@ def _collect_transform_specs(
         for child_body in body_elem.findall("body"):
             walk_body(child_frame, child_body, childclass)
 
+    top_bodies: List[ET.Element] = []
     for root, _ in roots:
         worldbody = root.find("worldbody")
-        if worldbody is None:
+        if worldbody is not None:
+            top_bodies.extend(worldbody.findall("body"))
+
+    if root_frame and len(top_bodies) != 1:
+        raise ValueError(f"root_frame needs exactly one top-level body, found {len(top_bodies)}")
+
+    for top_body in top_bodies:
+        walk_body(world_frame if publish_world_transform else None, top_body, frame_name=root_frame)
+
+    # Named sites (e.g. imu, lidar) become fixed frames on their body. They are
+    # named after all the bodies, so a site sharing a body's name gets the suffix.
+    for body_frame, site in sites:
+        site_name = site.get("name")
+        if not site_name:
             continue
-        for top_body in worldbody.findall("body"):
-            walk_body(world_frame, top_body)
+        specs.append(
+            TransformSpec(
+                parent_frame=body_frame,
+                child_frame=unique_frame(site_name),
+                body_pos=_parse_vec3(site.get("pos"), (0.0, 0.0, 0.0)),
+                body_quat=_parse_body_quat(site, angle_in_radians),
+                joint_name=None,
+                joint_type="fixed",
+                joint_axis=(0.0, 0.0, 1.0),
+                joint_pos=(0.0, 0.0, 0.0),
+            )
+        )
 
     return specs, mesh_specs
 
@@ -411,6 +450,8 @@ class XmlRobotStatePublisher(Node):
         publish_rate: float,
         mesh_topic: str,
         mesh_publish_rate: float,
+        root_frame: Optional[str] = None,
+        publish_world_transform: bool = True,
     ) -> None:
         super().__init__("xml_robot_state_publisher")
 
@@ -421,10 +462,15 @@ class XmlRobotStatePublisher(Node):
 
         self._xml_path = xml_path
         self._joint_positions: Dict[str, float] = {}
+        # Stamp of the latest joint message, and of the last TF published.
+        self._joint_stamp: Optional[TimeMsg] = None
+        self._last_tf_stamp: Optional[TimeMsg] = None
         self._specs, self._mesh_specs = _collect_transform_specs(
             root_xml=xml_path,
             world_frame=world_frame,
             frame_prefix=frame_prefix,
+            root_frame=root_frame,
+            publish_world_transform=publish_world_transform,
         )
 
         self._dynamic_specs = [s for s in self._specs if s.joint_name is not None and s.joint_type in ("hinge", "slide")]
@@ -480,6 +526,13 @@ class XmlRobotStatePublisher(Node):
         for i, name in enumerate(msg.name):
             if i < len(msg.position):
                 self._joint_positions[name] = msg.position[i]
+        # Like robot_state_publisher, stamp TF with the measurement time, so that
+        # lookups at a sensor's timestamp (e.g. a point cloud) see the matching
+        # joint positions. Unstamped messages (e.g. `ros2 topic pub`) get now.
+        stamp = msg.header.stamp
+        if stamp.sec == 0 and stamp.nanosec == 0:
+            stamp = self.get_clock().now().to_msg()
+        self._joint_stamp = stamp
 
     def _blind_state_callback(self, msg: "BlindState") -> None:
         # now i merge this BlindState's joints into the same dict used by
@@ -487,6 +540,8 @@ class XmlRobotStatePublisher(Node):
         for i, name in enumerate(msg.joints_name):
             if i < len(msg.joints_position):
                 self._joint_positions[name] = msg.joints_position[i]
+        # BlindState carries a DlsHeader, not a ROS header, so it is stamped on arrival.
+        self._joint_stamp = self.get_clock().now().to_msg()
 
     def _build_transform(self, spec: TransformSpec, stamp) -> TransformStamped:
         q_total = spec.body_quat
@@ -533,8 +588,16 @@ class XmlRobotStatePublisher(Node):
         return t
 
     def _publish_tf(self) -> None:
-        now = self.get_clock().now().to_msg()
-        transforms = [self._build_transform(spec, now) for spec in self._dynamic_specs]
+        # Until the first joint message, keep publishing the zero configuration.
+        if self._joint_stamp is None:
+            stamp = self.get_clock().now().to_msg()
+        else:
+            stamp = self._joint_stamp
+        # tf2 drops (and warns about) a transform sent again with the same stamp.
+        if stamp == self._last_tf_stamp:
+            return
+        self._last_tf_stamp = stamp
+        transforms = [self._build_transform(spec, stamp) for spec in self._dynamic_specs]
         if transforms:
             self._tf_broadcaster.sendTransform(transforms)
 
@@ -602,6 +665,18 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Optional prefix prepended to all generated body frame names",
     )
     parser.add_argument(
+        "--root-frame",
+        default=None,
+        help="Frame name of the top-level body, instead of its body name (e.g. base_link). "
+        "The model must have exactly one top-level body.",
+    )
+    parser.add_argument(
+        "--no-world-transform",
+        action="store_true",
+        help="Do not publish the world frame -> top-level body transform, e.g. when "
+        "another node (a state estimator) already publishes it",
+    )
+    parser.add_argument(
         "--joint-states-topic",
         nargs="+",
         default=None,
@@ -645,12 +720,14 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
-    args = parse_args(argv)
+    # ROS arguments (e.g. `--ros-args -p use_sim_time:=true`) go to rclpy, the rest to argparse.
+    argv = sys.argv if argv is None else [sys.argv[0], *argv]
+    args = parse_args(remove_ros_args(argv)[1:])
     xml_path = args.xml.resolve()
     if not xml_path.exists():
         raise FileNotFoundError(f"XML file not found: {xml_path}")
 
-    rclpy.init(args=None)
+    rclpy.init(args=argv)
     node = XmlRobotStatePublisher(
         xml_path=xml_path,
         world_frame=args.world_frame,
@@ -660,12 +737,21 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         publish_rate=args.publish_rate,
         mesh_topic=args.mesh_topic,
         mesh_publish_rate=args.mesh_publish_rate,
+        root_frame=args.root_frame,
+        publish_world_transform=not args.no_world_transform,
     )
     try:
         rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    except Exception:
+        # SIGINT/SIGTERM shut ROS down in the middle of a spin, which then raises
+        # (ExternalShutdownException, or RCLError on the invalid context).
+        if rclpy.ok():
+            raise
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        rclpy.try_shutdown()
 
 
 if __name__ == "__main__":

@@ -1,0 +1,29 @@
+#usda 1.0
+(
+    customLayerData = {
+        string creator = "MuJoCo USD Converter v0.2.0"
+    }
+    defaultPrim = "pegasus_description"
+    kilogramsPerUnit = 1
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "pegasus_description" (
+    prepend apiSchemas = ["GeomModelAPI"]
+    assetInfo = {
+        string name = "pegasus_description"
+    }
+    kind = "component"
+    prepend payload = @./Payload/Contents.usda@
+)
+{
+    float3[] extentsHint = [(-0.4794999, -0.35250002, -0.386146), (0.47950011, 0.35250002, -0.304146), (3.4028235e38, 3.4028235e38, 3.4028235e38), (-3.4028235e38, -3.4028235e38, -3.4028235e38), (3.4028235e38, 3.4028235e38, 3.4028235e38), (-3.4028235e38, -3.4028235e38, -3.4028235e38), (-0.514, -0.3615, -0.386146), (0.5245475, 0.3615, 0.595)]
+}
+
+def PhysicsScene "PhysicsScene" (
+    prepend payload = @./Payload/Contents.usda@</PhysicsScene>
+)
+{
+}
+
